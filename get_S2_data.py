@@ -4,6 +4,7 @@
 import csv
 import os
 import logging
+import time
 import json as jsonmod
 from glob import glob
 import geopandas as gpd
@@ -14,6 +15,7 @@ try:
 except ImportError:
     print("Error: module <requests> is not installed. Install it and run again.")
     exit()
+
 
 def get_keycloak(username: str, password: str) -> str:
     data = {

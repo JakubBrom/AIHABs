@@ -1,24 +1,57 @@
 import pandas as pd
-import numpy as np
-
 import openmeteo_requests
 import requests_cache
+import geopandas as gpd
+
 from retry_requests import retry
+from sqlalchemy import create_engine, exc, text
+from datetime import datetime, timedelta
 
-from matplotlib import pyplot as plt
 
-def getHistoricalMeteoData(lat, lon, start_date, end_date, meteo_features, time_zone='GMT'):
+def getHistoricalMeteoData(osm_id, meteo_features, user, db_name, db_table, vect_db_table, time_zone='GMT'):
     """
-    Get meteodata from Open-Meteo Historical Weather API.
+    Get meteodata from Open-Meteo Historical Weather API and save it to PostGIS database for the particular OSM id and its location. The function fulfill the last data in the database. The time serries is daily from 2015-06-01 till one day before today.
 
-    :param lat: Latitude (dec.)
-    :param lon: Longitude (dec.)
-    :param start_date: The start of the time series.
-    :param end_date: The end of the time series.
+    :param osm_id: ID of OSM object (water reservoir)
     :param meteo_features: List of meteo features
-    :param time_zone: Time zone. Deafult GMT
-    :return: Pandas DataFrame
+    :param user: Postgres DB user
+    :param db_name: Postgres database name
+    :param db_table: Postgres database table
+    :param vect_db_table: PostGIS database table with water reservoirs
+    :param time_zone: Time zone. Default GMT
+    :return:
     """
+
+    # Connect to PostGIS
+    engine = create_engine('postgresql://{user}@/{db_name}'.format(user=user, db_name=db_name))
+
+    # Get latitude and longitude
+    lat, lon = getLatLon(osm_id, db_name, user, vect_db_table)
+
+    # Getting the last date from database for particular OSM id.
+    try:
+        last_db_date = getLastDateInDB(osm_id, db_name, user, db_table)
+
+        if last_db_date == None:
+            datum = '2015-06-01'
+            last_db_date = datetime.strptime(datum, "%Y-%m-%d").date()
+
+        else:
+
+            # Remove last date from database.
+            sql_query = text("DELETE FROM meteo_history WHERE osm_id = :val1 AND date = :val2")
+            conn = engine.connect()
+            conn.execute(sql_query, {'val1': str(osm_id), 'val2': last_db_date})
+            conn.commit()
+            conn.close()
+
+        start_date = last_db_date
+
+    except:
+        datum = "2015-06-01"
+        start_date = datetime.strptime(datum, "%Y-%m-%d").date()
+
+    end_date = datetime.now().date() - timedelta(days=1)
 
     # Setup the Open-Meteo API client with cache and retry on error
     cache_session = requests_cache.CachedSession('.cache', expire_after=-1)
@@ -63,19 +96,35 @@ def getHistoricalMeteoData(lat, lon, start_date, end_date, meteo_features, time_
     # Handling date
     daily_meteo["date"] = daily_meteo["date"].dt.tz_localize(None).dt.date
 
-    return daily_meteo
+    # Add OSM ID to dataframe
+    daily_meteo["osm_id"] = str(osm_id)
 
-def getPredictedMeteoData(lat, lon, meteo_features, forecast_days=10, time_zone='GMT'):
-    """
-    Get meteodata forecast from Open-Meteo Forecast API
+    # Save data to PostGIS
+    daily_meteo.to_sql(db_table, con=engine, if_exists='append', index=False)
+    engine.dispose()
 
-    :param lat: Latitude (dec.)
-    :param lon: Longitude
-    :param meteo_features: List of meteo features
-    :param forecast_days: Number of days predicted (max 16)
-    :param time_zone: Time zone. Default GMT
-    :return: Pandas DataFrame
+    return
+
+def getPredictedMeteoData(osm_id, meteo_features, user, db_name, vect_db_table, forecast_days=10, db_tab_prefix='meteo_forec_', time_zone='GMT'):
     """
+    Get meteodata forecast from Open-Meteo Forecast API in daily step for particular OSM object id.
+
+    :param osm_id: OSM object id (water reservoir)
+    :param meteo_features: List of weather variables to get
+    :param user: Database user
+    :param db_name: Database name
+    :param vect_db_table: PostGIS database table with water reservoirs
+    :param forecast_days: Number of days to forecast. Default = 10, max = 16
+    :param db_tab_prefix: Prefix for database table with forecast data
+    :param time_zone: Time zone. Default = 'GMT'
+    :return: Dataframe with meteo data forecast
+    """
+
+    # Connect to PostGIS
+    engine = create_engine('postgresql://{user}@/{db_name}'.format(user=user, db_name=db_name))
+
+    # Get latitude and longitude
+    lat, lon = getLatLon(osm_id, db_name, user, vect_db_table)
 
     # Setup the Open-Meteo API client with cache and retry on error
     cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
@@ -92,7 +141,6 @@ def getPredictedMeteoData(lat, lon, meteo_features, forecast_days=10, time_zone=
         "timezone": time_zone,
         "forecast_days": forecast_days
     }
-    responses = openmeteo.weather_api(url, params=params)
 
     responses = openmeteo.weather_api(url, params=params)
 
@@ -117,23 +165,96 @@ def getPredictedMeteoData(lat, lon, meteo_features, forecast_days=10, time_zone=
         daily_data[meteo_features[i]] = daily.Variables(i).ValuesAsNumpy()
 
     daily_forecast = pd.DataFrame(data=daily_data)
+    daily_forecast["osm_id"] = str(osm_id)
 
-    # # Handling date
-    # daily_forecast["date"] = daily_forecast["date"].dt.tz_localize(None).dt.date
+    # Handling date
+    daily_forecast["date"] = daily_forecast["date"].dt.tz_localize(None).dt.date
+
+    # Save data to PostGIS
+    forecast_dbtab_name = db_tab_prefix + str(osm_id)
+    daily_forecast.to_sql(forecast_dbtab_name, con=engine, if_exists='replace', index=False)
+    engine.dispose()
 
     return daily_forecast
 
+def getLatLon(osm_id, db_name, user, db_table):
+    """
+    Get latitude and longitude from OSM id
+
+    :param osm_id: OSM object id
+    :param db_name: Database name
+    :param user: Database user
+    :param db_table: Database table
+    :return: Tuple of latitude and longitude
+    """
+
+    # Připojení k databázi PostGIS
+    engine = create_engine('postgresql://{}@/{}'.format(user, db_name))
+
+    sql = text("SELECT * FROM {db_table} WHERE osm_id = '{osm_id}'".format(osm_id=str(osm_id), db_table=db_table))
+
+    # Spuštění SQL dotazu a načtení výsledků do GeoDataFrame
+    gdf = gpd.read_postgis(sql, engine, geom_col='geometry')
+
+    # Get latitude and longitude
+    centroid = gdf.geometry.centroid
+    lon = centroid.x.mean()
+    lat = centroid.y.mean()
+
+    engine.dispose()
+
+    return lat, lon
+
+def getLastDateInDB(osm_id, db_name, user, db_table):
+    """
+    Get last date from OSM id
+
+    :param osm_id: OSM object id
+    :param db_name: Database name
+    :param user: Database user
+    :param db_table: Database table
+    :return: Last date in the database table for particular OSM id
+    """
+
+    try:
+        # Connect to PostGIS
+        engine = create_engine('postgresql://{}@/{}'.format(user, db_name))
+        connection = engine.connect()
+
+        # Define SQL query
+        sql_query = text("SELECT MAX(date) FROM {db_table} WHERE osm_id = '{osm_id}'".format(osm_id=str(osm_id), db_table=db_table))
+
+        # Running SQL query, conversion to DataFrame
+        df = pd.read_sql(sql_query, connection)
+        connection.close()
+        engine.dispose()
+
+        last_date = df.iloc[0,0]
+
+    except exc.NoSuchTableError:
+        print("The table does not exist. The last date will be 2015-06-01")
+        last_date = '2015-06-01'
+
+    return last_date
 
 if __name__ == '__main__':
+
+    # Připojení k databázi PostGIS
+    user = 'jakub'
+    db_name = 'AIHABs'
+    db_table = 'meteo_history'
+    vect_db_table = 'water_reservoirs'
+
+    # Definice proměnných
+
+    osm_id = 26133284
 
     meteo_features = ["weather_code", "temperature_2m_max", "temperature_2m_min", "daylight_duration", "sunshine_duration",
                   "precipitation_sum", "wind_speed_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum"]
 
-    df_history = getHistoricalMeteoData(50, 15, '2023-06-01', '2023-07-01', meteo_features)
-    df_forec = getPredictedMeteoData(lat=50, lon=15, meteo_features=meteo_features,forecast_days=10)
-    print(df_forec)
-    plt.plot(df_forec["temperature_2m_max"])
-    plt.show()
+    getHistoricalMeteoData(osm_id, meteo_features, user, db_name, db_table, vect_db_table)
+    getPredictedMeteoData(osm_id, meteo_features, user, db_name, vect_db_table, forecast_days=6)
 
-# TODO: Možná bude potřeba pořešit formát data/času v df - jenom datum
+
+
 

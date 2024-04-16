@@ -7,7 +7,7 @@ import geopandas as gpd
 from shapely.geometry import Point
 import random
 
-# Get water quality data fro satellite images for the particular features - get from RWQ server API
+# Get water quality data from satellite images for the particular features - get from RWQ server API
 
 # Approx. function for getting data --* TODO
 # def getDataFromRWQ(loc_ID, wq_feature):
@@ -79,7 +79,7 @@ def getVectorLyrs(in_file, col_name, poly_id, lake_buffer=-20, n_points_km=20, p
     gdf = gpd.read_file(in_file)
 
     # Get a the selected polygon using OSM ID
-    gdf_select = gdf.query("{col_name} == '{poly_id}'".format(col_name=col_name, poly_id=poly_id))
+    gdf_select = gdf.query("{col_name} == '{poly_id}'".format(col_name=col_name, poly_id=poly_id))  # TODO Nahradit importem z SQL
 
     # Get original CRS of the layer
     try:
@@ -133,7 +133,7 @@ def getVectorLyrs(in_file, col_name, poly_id, lake_buffer=-20, n_points_km=20, p
     gdf_points_utm_buff = gdf_points_utm.buffer(p_buff)
     gdf_points_wgs_buff = gdf_points_utm_buff.to_crs(epsg_orig)
 
-    # Uložení souborů do adresáře - Vectors/osm_id
+    # Uložení souborů do adresáře - Vectors/osm_id      # TODO Nebude se ukládat, jen se využijí vrstvy
     gdf_points.to_file(f_rand_points)
     gdf_points_wgs_buff.to_file(f_buff_points)
     gdf_select.to_file(f_orig_poly)
