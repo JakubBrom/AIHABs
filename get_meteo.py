@@ -5,7 +5,9 @@ import geopandas as gpd
 
 from retry_requests import retry
 from sqlalchemy import create_engine, exc, text
+from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timedelta
+import warnings
 
 
 def getHistoricalMeteoData(osm_id, meteo_features, user, db_name, db_table, vect_db_table, time_zone='GMT'):
@@ -105,26 +107,33 @@ def getHistoricalMeteoData(osm_id, meteo_features, user, db_name, db_table, vect
 
     return
 
-def getPredictedMeteoData(osm_id, meteo_features, user, db_name, vect_db_table, forecast_days=10, db_tab_prefix='meteo_forec_', time_zone='GMT'):
+def getPredictedMeteoData(osm_id, meteo_features, user, db_name, db_table_forecast, db_table_reservoirs, forecast_days=10, time_zone='GMT'):
     """
-    Get meteodata forecast from Open-Meteo Forecast API in daily step for particular OSM object id.
+    Get meteodata forecast from Open-Meteo Forecast API in daily step for particular OSM object id. The results are
+    saved to database.
 
     :param osm_id: OSM object id (water reservoir)
     :param meteo_features: List of weather variables to get
     :param user: Database user
     :param db_name: Database name
-    :param vect_db_table: PostGIS database table with water reservoirs
+    :param db_table_forecast: Database table with meteo forecast
+    :param db_table_reservoirs: PostGIS database table with water reservoirs
     :param forecast_days: Number of days to forecast. Default = 10, max = 16
-    :param db_tab_prefix: Prefix for database table with forecast data
     :param time_zone: Time zone. Default = 'GMT'
     :return: Dataframe with meteo data forecast
     """
 
+    if forecast_days > 16:
+        warnings.warn("The maximum number of days to forecast is 16. The forecast will be set to 16 days", stacklevel=2)
+        forecast_days = 16
+
     # Connect to PostGIS
     engine = create_engine('postgresql://{user}@/{db_name}'.format(user=user, db_name=db_name))
+    Session = sessionmaker(bind=engine)
+    session = Session()
 
     # Get latitude and longitude
-    lat, lon = getLatLon(osm_id, db_name, user, vect_db_table)
+    lat, lon = getLatLon(osm_id, db_name, user, db_table_reservoirs)
 
     # Setup the Open-Meteo API client with cache and retry on error
     cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
@@ -170,9 +179,25 @@ def getPredictedMeteoData(osm_id, meteo_features, user, db_name, vect_db_table, 
     # Handling date
     daily_forecast["date"] = daily_forecast["date"].dt.tz_localize(None).dt.date
 
-    # Save data to PostGIS
-    forecast_dbtab_name = db_tab_prefix + str(osm_id)
-    daily_forecast.to_sql(forecast_dbtab_name, con=engine, if_exists='replace', index=False)
+    # Remove the old data from Postgres
+    # Check if table exists and create new one if not
+    query = text(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '{tab_name}')".format(
+            tab_name=db_table_forecast))
+
+    # Vykonání dotazu s parametrem
+    with engine.connect() as connection:
+        result = connection.execute(query)
+        exists = result.scalar()
+
+    if exists:
+        print("Table {} exists".format(db_table_forecast))
+        session.execute(text("DELETE FROM {db_table} WHERE osm_id = '{osm_id}'".format(db_table=db_table_forecast, osm_id=str(osm_id))))
+        session.commit()
+
+
+    # Save new data to Postgres
+    daily_forecast.to_sql(db_table_forecast, con=engine, if_exists='append', index=False)
     engine.dispose()
 
     return daily_forecast
@@ -191,13 +216,13 @@ def getLatLon(osm_id, db_name, user, db_table):
     # Připojení k databázi PostGIS
     engine = create_engine('postgresql://{}@/{}'.format(user, db_name))
 
-    sql = text("SELECT * FROM {db_table} WHERE osm_id = '{osm_id}'".format(osm_id=str(osm_id), db_table=db_table))
-
-    # Spuštění SQL dotazu a načtení výsledků do GeoDataFrame
-    gdf = gpd.read_postgis(sql, engine, geom_col='geometry')
+    # Get geometry for polygon
+    sql_query = text("SELECT * FROM {db_table} WHERE osm_id = '{osm_id}'".format(osm_id=str(osm_id), db_table=db_table))
+    gdf = gpd.read_postgis(sql_query, engine, geom_col='geometry')
+    gdf = gpd.GeoDataFrame(gdf, geometry='geometry', crs='epsg:4326')
 
     # Get latitude and longitude
-    centroid = gdf.geometry.centroid
+    centroid = gdf['geometry'].centroid
     lon = centroid.x.mean()
     lat = centroid.y.mean()
 
@@ -243,17 +268,18 @@ if __name__ == '__main__':
     user = 'jakub'
     db_name = 'AIHABs'
     db_table = 'meteo_history'
-    vect_db_table = 'water_reservoirs'
+    db_table_forecast = 'meteo_forecast'
+    db_table_reservoirs = 'water_reservoirs'
 
     # Definice proměnných
 
-    osm_id = 26133284
+    osm_id = 1613295
 
     meteo_features = ["weather_code", "temperature_2m_max", "temperature_2m_min", "daylight_duration", "sunshine_duration",
                   "precipitation_sum", "wind_speed_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum"]
 
-    getHistoricalMeteoData(osm_id, meteo_features, user, db_name, db_table, vect_db_table)
-    getPredictedMeteoData(osm_id, meteo_features, user, db_name, vect_db_table, forecast_days=6)
+    getHistoricalMeteoData(osm_id, meteo_features, user, db_name, db_table, db_table_reservoirs)
+    getPredictedMeteoData(osm_id, meteo_features, user, db_name, db_table_forecast, db_table_reservoirs, forecast_days=3)
 
 
 
