@@ -17,7 +17,7 @@ Vytvořní polygonů a náhodných bodů
   * osm_id_bpoints - bodová vrstva s bufferem (polygony)
 * TODO: Je otázka, jestli z funkce extrahovat gdf nebo si pak data následně načítat. Uvidíme.
 * TODO: asi bude chtít info o datech ukládat do SQL databáze
-
+xx
 
 
 TODO: Zonální statistiky
