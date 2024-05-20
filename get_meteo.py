@@ -39,7 +39,6 @@ def getHistoricalMeteoData(osm_id, meteo_features, user, db_name, db_table, vect
             last_db_date = datetime.strptime(datum, "%Y-%m-%d").date()
 
         else:
-
             # Remove last date from database.
             sql_query = text("DELETE FROM meteo_history WHERE osm_id = :val1 AND date = :val2")
             conn = engine.connect()
@@ -232,7 +231,7 @@ def getLatLon(osm_id, db_name, user, db_table):
 
 def getLastDateInDB(osm_id, db_name, user, db_table):
     """
-    Get last date from OSM id
+    Get last date db table for particular OSM id
 
     :param osm_id: OSM object id
     :param db_name: Database name
@@ -247,18 +246,18 @@ def getLastDateInDB(osm_id, db_name, user, db_table):
         connection = engine.connect()
 
         # Define SQL query
-        sql_query = text("SELECT MAX(date) FROM {db_table} WHERE osm_id = '{osm_id}'".format(osm_id=str(osm_id), db_table=db_table))
+        sql_query = text("SELECT MAX(date) FROM {db_table} WHERE osm_id = '{osm_id}'".format(
+            osm_id=str(osm_id), db_table=db_table))
 
         # Running SQL query, conversion to DataFrame
         df = pd.read_sql(sql_query, connection)
         connection.close()
         engine.dispose()
-
         last_date = df.iloc[0,0]
 
     except exc.NoSuchTableError:
-        print("The table does not exist. The last date will be 2015-06-01")
-        last_date = '2015-06-01'
+        print("The date does not exist in the database. The default value will be set.")
+        last_date = None
 
     return last_date
 
@@ -273,13 +272,13 @@ if __name__ == '__main__':
 
     # Definice proměnných
 
-    osm_id = 1613295
+    osm_id = 6640987
 
     meteo_features = ["weather_code", "temperature_2m_max", "temperature_2m_min", "daylight_duration", "sunshine_duration",
                   "precipitation_sum", "wind_speed_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum"]
 
     getHistoricalMeteoData(osm_id, meteo_features, user, db_name, db_table, db_table_reservoirs)
-    getPredictedMeteoData(osm_id, meteo_features, user, db_name, db_table_forecast, db_table_reservoirs, forecast_days=3)
+    # getPredictedMeteoData(osm_id, meteo_features, user, db_name, db_table_forecast, db_table_reservoirs, forecast_days=3)
 
 
 
