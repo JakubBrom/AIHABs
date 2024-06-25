@@ -52,10 +52,9 @@ def point_mesh(polygon, distance_lat=0.01, distance_lon=0.01):
 def delaunay_centroids(vertices):
     """
     Perform Delaunay triangulation on the given vertices and return a GeoDataFrame
-    containing the centroids of the Voronoi regions..
+    containing the centroids of the Voronoi regions.
 
     :param vertices: The vertices for the Delaunay triangulation. Points geometry.
-
     :return: A GeoDataFrame containing the centroids of the Delaunay triangles.
     """
 
@@ -79,7 +78,6 @@ def voronoi_centroids(vertices):
     containing the centroids of the Voronoi regions.
 
     :param vertices: The vertices for the Voronoi triangulation. Points geometry.
-
     :return: A GeoDataFrame containing the centroids of the Voronoi triangles.
     """
     # Calculate Voronoi triangulation
@@ -128,7 +126,6 @@ def get_vertices(polygon):
     return all_coords
 
 
-@measure_execution_time
 def generate_points_in_polygon(in_gdf_polygon, lake_buffer=-20, n_points_km=20, n_max_points=5000, **kwargs):
     """
     Generate points within a polygon with respect of its complexity, and clip them with a buffer zone.
@@ -142,6 +139,7 @@ def generate_points_in_polygon(in_gdf_polygon, lake_buffer=-20, n_points_km=20, 
               - The randomly selected points within the buffer layer (GeoDataFrame).
               - The buffer layer in the original coordinate reference system (GeoDataFrame).
     """
+
     # Simplyfy input polygon
     polygon_geom = in_gdf_polygon['geometry'][0].simplify(0.0001, preserve_topology=True)
     gdf_polygon = gpd.GeoDataFrame(geometry=[polygon_geom], crs=in_gdf_polygon.crs)
@@ -208,19 +206,28 @@ def generate_points_in_polygon(in_gdf_polygon, lake_buffer=-20, n_points_km=20, 
     return gdf_centroids_clipped, gdf_centroids_selected, gdf_buffer_wgs
 
 
+@measure_execution_time
 def get_sampling_points(osm_id, db_name, user, db_table_reservoirs, db_table_points, **kwargs):
+    """
+
+    :param osm_id: OSM object id
+    :param db_name: Database name
+    :param user: Database user
+    :param db_table_reservoirs: Database table with water reservoirs polygons
+    :param db_table_points: Database table with points for reservoir polygons
+    :param kwargs: Additional parameters
+    :return: The randomly selected points within the buffer layer of reservoirs (GeoDataFrame). Points for reservoirs are stored in the db_table_points database table.
+    """
 
     # Connect to PostGIS
     engine = create_engine('postgresql://{user}@/{db_name}'.format(user=user, db_name=db_name))
 
-    # Check if table exists and create new one if not
-    # SQL dotaz pro ověření existence tabulky
+    # Check if points table exists and create new one if not
     query = text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '{tab_name}')".format(tab_name=db_table_points))
 
-    # Vykonání dotazu s parametrem
     with engine.connect() as connection:
         result = connection.execute(query)
-        exists = result.scalar()  # Získání prvního výsledku jako hodnoty
+        exists = result.scalar()
 
     if exists:
         # Check if are the data available in the table
@@ -243,8 +250,20 @@ def get_sampling_points(osm_id, db_name, user, db_table_reservoirs, db_table_poi
     # Produce random points in the reservoir polygon
     points_selected = generate_points_in_polygon(polygon, **kwargs)[1]
     points_selected['osm_id'] = str(osm_id)  # Add osm_id
+    points_selected['PID'] = [i for i in range(len(points_selected))]
 
     # Insert points into the DB table
     points_selected.to_postgis(db_table_points, con=engine, if_exists='append', index=False)
+    engine.dispose()
 
     return points_selected
+
+
+if __name__ == '__main__':
+    osm_id = 1239458
+    db_name = 'AIHABs'
+    user = 'jakub'
+    db_table_reservoirs = 'water_reservoirs'
+    db_table_points = 'selected_points'
+
+    get_sampling_points(osm_id, db_name, user, db_table_reservoirs, db_table_points)
