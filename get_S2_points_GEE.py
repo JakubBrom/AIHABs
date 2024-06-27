@@ -86,8 +86,9 @@ def process_sentinel2_points_data(point_layer, start_date, end_date, db_name, us
 def get_sentinel2_data(ee_project, osm_id, db_name, user, db_table_reservoirs, db_table_points, db_table_S2_points_data,
                        start_date=None, end_date=None, n_points_max=5000, n_processes=10):
     """
-    Function for managing of the Sentinel-2 data fetching for random points within the water reservoir polygon and time
-    period using Google Earth Engine. The data are stored in the PostGIS Database.
+    This function is a wrapper for the process_sentinel2_points_data function. Function for managing of the Sentinel-2
+    data fetching for random points within the water reservoir polygon and time period using Google Earth Engine.
+    The data are stored in the PostGIS Database.
 
     :param ee_project: Google Earth Engine project
     :param osm_id: OSM object id
