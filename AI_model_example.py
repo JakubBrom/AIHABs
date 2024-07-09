@@ -9,7 +9,7 @@ def AI_model_example(B01, B02, B03, B04, B05, B06, B07, B08, B8A, B09, B11, B12)
     Example function for e.g. ChlA AI prediction model. The input parameters are bands from Sentinel-2 image (L2A level) or values for particular pixel.
     The values are INT in default (e.i. original values from the image). The numpy arrays can ce used.
 
-    :param B01: Band values for particular pixel or for some area of the image (int)
+    :param B01: Surface spectral reflectance (0 to 1) for particular pixel or for some area of the image (float)
     :param B02: ...
     :param B03: ...
     :param B04: ...
@@ -24,11 +24,14 @@ def AI_model_example(B01, B02, B03, B04, B05, B06, B07, B08, B8A, B09, B11, B12)
     :return: Value or Numpy array
     """
 
+    # imports --> define imports here
+    from sklearn.linear_model import LinearRegression
+
     # Do some work, e.g.
-    chla_value = B05 / B04
+    prediction = B05 / B04
     time.sleep(5)
 
-    return chla_value
+    return prediction
 
 
 # 2. Serialize the model to pickle file. The file will be used for predictions afterwards.
