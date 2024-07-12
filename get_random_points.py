@@ -257,13 +257,3 @@ def get_sampling_points(osm_id, db_name, user, db_table_reservoirs, db_table_poi
     engine.dispose()
 
     return points_selected
-
-
-if __name__ == '__main__':
-    osm_id = 1239458
-    db_name = 'AIHABs'
-    user = 'jakub'
-    db_table_reservoirs = 'water_reservoirs'
-    db_table_points = 'selected_points'
-
-    get_sampling_points(osm_id, db_name, user, db_table_reservoirs, db_table_points)

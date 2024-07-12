@@ -33,6 +33,7 @@ def process_sentinel2_points_data(point_layer, start_date, end_date, db_name, us
     point_collection = ee.FeatureCollection(point_layer.__geo_interface__)
 
     def extract_values(image):
+        # Set the parameters
         pixel_values = image.sampleRegions(collection=point_collection, scale=10)
         pixel_values = pixel_values.map(lambda feature: feature.set({
             'image_id': image.id(),
