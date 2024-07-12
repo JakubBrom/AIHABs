@@ -4,9 +4,27 @@ from sqlalchemy import create_engine, exc, text
 import datetime
 from warnings import warn
 import dill
+import base64
 
 def add_model_to_table(table_name, db_name, user, feature, osm_id, orig_date, author, test_accuracy, pkl_file,
                        default=False):
+    """
+    The function for adding Pickle model to the database
+
+    :param table_name: Name of the db table
+    :param db_name: Database name
+    :param user: User name
+    :param feature: Water quality feature (ChlA, ChlB, PC, TSS, APC, PE, CX)
+    :param osm_id: OSM object id (default = None)
+    :param orig_date: Date of the model creation/uploading
+    :param author: Name of the model author
+    :param test_accuracy: Accuracy of the model
+    :param pkl_file: Path to the pickle file
+    :param default: Is the model default (default = False)
+    :return:
+    """
+
+    # Connect to PostGIS
     engine = create_engine('postgresql://{user}@/{db_name}'.format(user=user, db_name=db_name))
 
     # Check if table exists
@@ -34,6 +52,10 @@ def add_model_to_table(table_name, db_name, user, feature, osm_id, orig_date, au
 
     with open(pkl_file, 'rb') as f:
         pkl_model = dill.load(f)
+
+    pkl_model = dill.dumps(pkl_model)       # convert to bytes
+    pkl_model = base64.b64encode(pkl_model).decode('utf-8')
+
 
     if default:
         def_query = text("UPDATE {db_table} SET is_default = False WHERE feature = '{feature}'".format(
@@ -71,6 +93,6 @@ if __name__ == '__main__':
     default = True
     author = 'Jakub'
     test_accuracy = 0.87
-    pkl_file = 'pomocne/modely/AI_model_test.pkl'
+    pkl_file = 'modely/AI_model_testx.pkl'
 
     add_model_to_table(tab_name, db_name, user, feature, osm_id, orig_date, author, test_accuracy, pkl_file, default)
