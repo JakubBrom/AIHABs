@@ -203,16 +203,3 @@ def get_sentinel2_data(ee_project, osm_id, db_name, user, db_table_reservoirs, d
     engine.dispose()
 
     return
-
-
-if __name__ == '__main__':
-
-    ee_project = 'ee-bromjakub'
-    osm_id = 15444638 #1239458
-    user = 'jakub'
-    db_name = 'AIHABs'
-    db_table_points = 'selected_points'
-    db_table_reservoirs = 'water_reservoirs'
-    db_table_S2_points_data = 's2_points_data'
-
-    get_sentinel2_data(ee_project, osm_id, db_name, user, db_table_reservoirs, db_table_points, db_table_S2_points_data)
