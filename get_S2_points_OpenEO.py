@@ -207,8 +207,6 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
     n_days = (end_date - st_date).days
 
     n_chunks = n_days // step_length + 1
-    print(n_chunks)
-    print(step_length)
 
     # Create time windows
     t_delta = int((end_date - st_date).days / n_chunks)
@@ -222,10 +220,8 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
              range(len(date_range) - 1)]
     slots.append((date_range[-1].date().isoformat(), end_date.isoformat()))
 
-    print(slots)
-
     for i in range(len(slots)):
-        print(slots[i][0], slots[i][1])
+        # print(slots[i][0], slots[i][1])
 
         try:
             process_s2_points_OEO(point_layer, slots[i][0], slots[i][1], db_name, user, db_table_S2_points_data)
@@ -250,8 +246,12 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
                 days=1)).date().isoformat()) for j in range(len(date_range_window) - 1)]
             slots_window.append((date_range_window[-1].date().isoformat(), end_in_slot.isoformat()))
 
+            #
             for slot in range(len(slots_window)):
-                print(slots_window[slot][0], slots_window[slot][1])
+                # Attempt to download data in the time windows. If the data are not available, the attempt will be
+                # repeated 5 times. In case of an error, the function will use shorter time windows as a protection
+                # of the missing data. Because there can be some blocks in the server, the function is sleeping for 1
+                # second between attempts.
 
                 max_attempts = 5
                 attempt = 0
@@ -266,25 +266,8 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
                         warnings.warn("Attempt {attempt} failed. Error: {error}".format(attempt=attempt, error=str(e)),
                                       stacklevel=2)
                         attempt += 1
-                        time.sleep(1)
+                        time.sleep(1)       # sleep for 1 second because the possibly unblocking the server
 
     engine.dispose()
 
     return
-
-
-if __name__ == '__main__':
-
-    osm_id = 1239458
-
-    start_date='2023-04-01'
-    end_date='2024-05-01'
-    db_name='AIHABs'
-    user='jakub'
-    db_table='s2_points_eo_data'
-
-    db_table_reservoirs = 'water_reservoirs'
-    db_table_points = 'selected_points'
-
-    # process_s2_points_OEO(point_layer, start_date, end_date, db_name, user, db_table)
-    get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_points, db_table)
