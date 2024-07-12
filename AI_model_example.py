@@ -7,6 +7,10 @@ import numpy as np
 # 1. Define AI model for WQ parameter prediction from S2 L2A data: e.g. ChlA. The model can be more complex (e.g. Class).
 # The parameters need to be defined in this way
 class AI_model_example():
+    """
+    A class with the AI model for WQ feature calculation from Sentinel 2 L2A data. The class contains preprocessing of
+    the data (the input is standardized, see below), .
+    """
     def __init__(self, model_path):
         self.model = joblib.load(model_path)
 
@@ -16,8 +20,8 @@ class AI_model_example():
 
         # Do some work with data here
         processed_data = input_data
-        processed_data = np.reshape(processed_data, (len(processed_data), 1))       # Reshape data for input to the
-        # model if needed
+        processed_data = np.nan_to_num(processed_data)          # Check the data for NaNs or check the model that it is able to work with NaNs
+        processed_data = np.reshape(processed_data, (len(processed_data), 1))       # Reshape data for input to the model if needed
 
         return processed_data
 
@@ -40,7 +44,8 @@ with open('AI_model_example.pkl', 'wb') as f:
 
 
 #-----------------------------------------------------------------------------------------------------------------------
-# 3. Load the model from pickle file - will be done in the calculation script. In this place the pickle file is a blackbox.
+# The way how does the model work afterwards
+# Load the model from pickle file - will be done in the calculation script. In this place the pickle file is a blackbox.
 with open('AI_model_example.pkl', 'rb') as f:
     AI_model_example = dill.load(f)
 
