@@ -261,25 +261,6 @@ def getLastDateInDB(osm_id, db_name, user, db_table):
 
     return last_date
 
-if __name__ == '__main__':
-
-    # Připojení k databázi PostGIS
-    user = 'jakub'
-    db_name = 'AIHABs'
-    db_table = 'meteo_history'
-    db_table_forecast = 'meteo_forecast'
-    db_table_reservoirs = 'water_reservoirs'
-
-    # Definice proměnných
-
-    osm_id = 6640987
-
-    meteo_features = ["weather_code", "temperature_2m_max", "temperature_2m_min", "daylight_duration", "sunshine_duration",
-                  "precipitation_sum", "wind_speed_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum"]
-
-    getHistoricalMeteoData(osm_id, meteo_features, user, db_name, db_table, db_table_reservoirs)
-    # getPredictedMeteoData(osm_id, meteo_features, user, db_name, db_table_forecast, db_table_reservoirs, forecast_days=3)
-
 
 
 
