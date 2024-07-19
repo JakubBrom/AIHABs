@@ -1,9 +1,11 @@
 import json
+import os
 import time
 import openeo
 import tempfile
 import warnings
 import scipy.signal
+import uuid
 
 import pandas as pd
 
@@ -17,6 +19,14 @@ from shapely.geometry import Point
 from AIHABs_wrappers import measure_execution_time
 from get_random_points import get_sampling_points
 from get_meteo import getLastDateInDB
+
+
+def authenticate_OEO():
+    # Authenticate
+    connection = openeo.connect(url="openeo.dataspace.copernicus.eu")
+    connection.authenticate_oidc()
+
+    return connection
 
 
 @measure_execution_time
@@ -40,8 +50,7 @@ def process_s2_points_OEO(point_layer, start_date, end_date, db_name, user, db_t
     """
 
     # Authenticate
-    connection = openeo.connect(url="openeo.dataspace.copernicus.eu")
-    connection.authenticate_oidc()
+    connection = authenticate_OEO()
 
     # Transform input GeoDataFrame layer into json
     points = json.loads(point_layer.to_json())
@@ -92,10 +101,10 @@ def process_s2_points_OEO(point_layer, start_date, end_date, db_name, user, db_t
     job = aggregated.execute_batch(out_format="CSV")
 
     # Download the results
-    csv_file = tempfile.NamedTemporaryFile(suffix='.csv')
-    job.get_results().download_file(csv_file.name)
-
-    df = pd.read_csv(csv_file)
+    csv_file = f"{uuid.uuid4()}.csv"
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp', csv_file)
+    job.get_results().download_file(csv_path)
+    df = pd.read_csv(csv_path)
 
     if df.get('date') is not None:
         # Convert date do isoformat
@@ -130,6 +139,7 @@ def process_s2_points_OEO(point_layer, start_date, end_date, db_name, user, db_t
         gdf_out = df_all
 
     engine.dispose()
+    #os.remove(csv_path)
 
     return gdf_out
 
