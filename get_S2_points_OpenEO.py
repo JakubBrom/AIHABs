@@ -228,10 +228,12 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
     date_range = pd.date_range(start=st_date, end=end_date, freq=freq)
     slots = [(date_range[i].date().isoformat(), (date_range[i + 1] - timedelta(days=1)).date().isoformat()) for i in
              range(len(date_range) - 1)]
-    slots.append((date_range[-1].date().isoformat(), end_date.isoformat()))
+    # slots.append((date_range[-1].date().isoformat(), end_date.isoformat()))
+
+    print(slots)
 
     for i in range(len(slots)):
-        # print(slots[i][0], slots[i][1])
+        print(slots[i][0], slots[i][1])
 
         try:
             process_s2_points_OEO(point_layer, slots[i][0], slots[i][1], db_name, user, db_table_S2_points_data)
@@ -263,7 +265,9 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
                 # of the missing data. Because there can be some blocks in the server, the function is sleeping for 1
                 # second between attempts.
 
-                max_attempts = 5
+                print(slot)
+
+                max_attempts = 2
                 attempt = 0
                 success = False
 
