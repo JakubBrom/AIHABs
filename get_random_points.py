@@ -199,7 +199,7 @@ def generate_points_in_polygon(in_gdf_polygon, lake_buffer=-20, n_points_km=20, 
     else:
         n_points = min(n_points, n_centroids_clipped, n_max_points)
 
-    print('Number of points for the reservoir: {}'.format(n_points))
+    print(f'Number of points for the reservoir: {n_points}')
 
     # Sample points
     gdf_centroids_selected = gdf_centroids_clipped.sample(n=n_points)
