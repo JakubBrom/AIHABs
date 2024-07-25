@@ -30,7 +30,7 @@ def authenticate_OEO():
 
 
 @measure_execution_time
-def process_s2_points_OEO(point_layer, start_date, end_date, db_name, user, db_table, max_cc=30, cloud_mask=True):
+def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, user, db_table, max_cc=30, cloud_mask=True):
     """
     The function processes Sentinel-2 satellite data from the Copernicus Dataspace Ecosystem. The function
     retrieves data based on the specified parameters (cloud mask) for randomly selected points within the reservoir (
@@ -38,6 +38,7 @@ def process_s2_points_OEO(point_layer, start_date, end_date, db_name, user, db_t
     The output is a GeoDataFrame.
 
     Parameters:
+    :param osm_id: OSM object id
     :param point_layer: Point layer (GeoDataFrame)
     :param start_date: Start date
     :param end_date: End date
@@ -98,50 +99,123 @@ def process_s2_points_OEO(point_layer, start_date, end_date, db_name, user, db_t
     )
 
     # Run the job
-    job = aggregated.execute_batch(out_format="CSV")
+    job = aggregated.create_job(title=f"{osm_id}_{start_date}_{end_date}", out_format="CSV")
+
+    # Get job ID
+    jobid = job.job_id
+
+    print(f"Job ID: {jobid}")
+
+    # Start the job
+    job.start_and_wait()
+
+    # job = aggregated.execute_batch(title=f"{osm_id}_{start_date}_{end_date}", out_format="CSV")
 
     # Download the results
-    csv_file = f"{uuid.uuid4()}.csv"
-    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp', csv_file)
-    job.get_results().download_file(csv_path)
-    df = pd.read_csv(csv_path)
+    try:
+        if job.status() == 'finished':
+            csv_file = f"{uuid.uuid4()}.csv"
+            csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp', csv_file)
+            job.get_results().download_file(csv_path)
 
-    if df.get('date') is not None:
-        # Convert date do isoformat
-        df['date'] = pd.to_datetime(df['date']).dt.date
+            # Check if the file is available
+            print("Waiting for data to be available...")
+            t0 = time.time()
+            while not os.path.exists(csv_path):
+                if time.time() - t0 > 60:
+                    print(f"Data are not available.")
+                time.sleep(1)
 
-        # Remove missing values
-        df_all = df.dropna(axis=0, how='any')
+            df = pd.read_csv(csv_path)
 
-        # Rename columns
-        df_all = df_all.rename(columns={'feature_index': 'PID'})
-        for i in range(0, len(band_list)):
-            df_all = df_all.rename(columns={'avg(band_{})'.format(i): band_list[i]})
+        else:
+            df = pd.DataFrame()
 
-        # Add OSM id
-        df_all['osm_id'] = point_layer['osm_id'][0]
+    except Exception as e:
+        print(e)
 
+        df = pd.DataFrame()
+
+    print(df)
+
+    if not df.empty:
         # Convert to GeoDataFrame
-        latlon = pd.DataFrame(point_layer['PID'])
-        latlon['lat'] = point_layer.geometry.y
-        latlon['lon'] = point_layer.geometry.x
-        df_all = df_all.merge(latlon, on='PID', how='left')
+        if df.get('date') is not None:
+            # Convert date do isoformat
+            df['date'] = pd.to_datetime(df['date']).dt.date
 
-        geometries = [Point(xy) for xy in zip(df_all['lon'], df_all['lat'])]
-        gdf_out = gpd.GeoDataFrame(df_all, geometry=geometries, crs='epsg:4326')
+            # Remove missing values
+            df_all = df.dropna(axis=0, how='any')
 
-        # Save the results to the database
-        gdf_out.to_postgis(db_table, con=engine, if_exists='append', index=False)
-        engine.dispose()
+            # Rename columns
+            df_all = df_all.rename(columns={'feature_index': 'PID'})
+            for i in range(0, len(band_list)):
+                df_all = df_all.rename(columns={'avg(band_{})'.format(i): band_list[i]})
 
-    else:
-        df_all = pd.DataFrame()
-        gdf_out = df_all
+            # Add OSM id
+            df_all['osm_id'] = point_layer['osm_id'][0]
+
+            # Convert to GeoDataFrame
+            latlon = pd.DataFrame(point_layer['PID'])
+            latlon['lat'] = point_layer.geometry.y
+            latlon['lon'] = point_layer.geometry.x
+            df_all = df_all.merge(latlon, on='PID', how='left')
+
+            geometries = [Point(xy) for xy in zip(df_all['lon'], df_all['lat'])]
+            gdf_out = gpd.GeoDataFrame(df_all, geometry=geometries, crs='epsg:4326')
+
+            # Save the results to the database
+            gdf_out.to_postgis(db_table, con=engine, if_exists='append', index=False)
+            engine.dispose()
 
     engine.dispose()
-    #os.remove(csv_path)
+    # os.remove(csv_path)
 
-    return gdf_out
+    return jobid
+
+
+def check_job_error(jobid=None):
+    """
+    Check if the dataset is empty
+
+    :param jobid:
+    :return:
+    """
+    # Connection to OEO
+    connection = authenticate_OEO()
+
+    # Check if the error is in the log
+    if jobid is not None:
+        status = connection.job(jobid).status()
+
+        if status == 'error':
+
+            # Check if the data are available
+            log = connection.job(jobid).logs()
+
+            for i in log:
+
+                subs_fail = "Exception during Spark execution"
+                subs_nodata = "Could not find data for your load_collection request with catalog ID"
+
+                if subs_nodata in i['message']:
+                    print("No data available for the time window and spatial extent")
+                    return False
+
+            # In case of unspecific error
+            print("Unspecific error...")
+            return True
+
+        # In case the job was ok
+        else:
+            print("Dataset OK")
+            return False
+
+    # In case job_id does not exist
+    else:
+        print("Unspecific error... Job ID does not exist")
+        return True
+
 
 @measure_execution_time
 def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_points, db_table_S2_points_data,
@@ -228,25 +302,37 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
     date_range = pd.date_range(start=st_date, end=end_date, freq=freq)
     slots = [(date_range[i].date().isoformat(), (date_range[i + 1] - timedelta(days=1)).date().isoformat()) for i in
              range(len(date_range) - 1)]
-    # slots.append((date_range[-1].date().isoformat(), end_date.isoformat()))
+    slots.append((date_range[-1].date().isoformat(), end_date.isoformat()))       # Add last day window
 
     print(slots)
 
+    # Get Sentinel-2 data - run the job
+    # Loop over the time windows
     for i in range(len(slots)):
         print(slots[i][0], slots[i][1])
 
+        # Try to get Sentinel-2 data for the time window. There are 2 attempts
         try:
-            process_s2_points_OEO(point_layer, slots[i][0], slots[i][1], db_name, user, db_table_S2_points_data)
+            jobid = process_s2_points_OEO(osm_id, point_layer, slots[i][0], slots[i][1], db_name, user, db_table_S2_points_data)
+            print(f"Attempt to get Sentinel 2 data succeeded. Job ID: {jobid}")
 
         except Exception as e:
-            warnings.warn("Attempt failed. Error: {error}. The time window will be splitted to smaller "
-                          "windows".format(error=str(e)), stacklevel=2)
+            print(f"Attempt to get Sentinel 2 data failed. Error: {str(e)}")
+            jobid = None
 
+        # Check if there is an error in the job
+        dataset_err = check_job_error(jobid)
+
+        if dataset_err:
+            warnings.warn("Attempt failed. Error: {error}. The time window will be splitted to smaller "
+                          "windows", stacklevel=2)
+
+            # Split time window to smaller windows
             st_in_slot = datetime.strptime(slots[i][0], "%Y-%m-%d").date()
             end_in_slot = datetime.strptime(slots[i][1], "%Y-%m-%d").date()
             n_days_window = (end_in_slot - st_in_slot).days
 
-
+            # Split time window to smaller windows (30 days max)
             if n_days_window > 30:
                 t_delta_window = 30
             else:
@@ -265,7 +351,7 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
                 # of the missing data. Because there can be some blocks in the server, the function is sleeping for 1
                 # second between attempts.
 
-                print(slot)
+                print(slots_window[slot][0], slots_window[slot][1])
 
                 max_attempts = 2
                 attempt = 0
@@ -273,7 +359,7 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
 
                 while attempt < max_attempts and not success:
                     try:
-                        process_s2_points_OEO(point_layer, slots_window[slot][0], slots_window[slot][1], db_name, user,
+                        process_s2_points_OEO(osm_id, point_layer, slots_window[slot][0], slots_window[slot][1], db_name, user,
                                               db_table_S2_points_data)
                         success = True
                     except Exception as e:
