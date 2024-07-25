@@ -107,7 +107,13 @@ def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, us
     print(f"Job ID: {jobid}")
 
     # Start the job
-    job.start_and_wait()
+    try:
+        job.start_and_wait()
+
+    except Exception as e:
+        print(e)
+        engine.dispose()
+        return jobid
 
     # job = aggregated.execute_batch(title=f"{osm_id}_{start_date}_{end_date}", out_format="CSV")
 
@@ -128,6 +134,12 @@ def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, us
 
             df = pd.read_csv(csv_path)
 
+            # Remove the temporary file
+            print(f"Removing temporary file {csv_file}")
+            if os.path.exists(csv_path):
+
+                os.remove(csv_path)
+
         else:
             df = pd.DataFrame()
 
@@ -135,8 +147,6 @@ def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, us
         print(e)
 
         df = pd.DataFrame()
-
-    print(df)
 
     if not df.empty:
         # Convert to GeoDataFrame
@@ -169,7 +179,6 @@ def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, us
             engine.dispose()
 
     engine.dispose()
-    # os.remove(csv_path)
 
     return jobid
 
@@ -195,8 +204,8 @@ def check_job_error(jobid=None):
 
             for i in log:
 
-                subs_fail = "Exception during Spark execution"
-                subs_nodata = "Could not find data for your load_collection request with catalog ID"
+                # subs_fail = "Exception during Spark execution"
+                subs_nodata = "NoDataAvailable"
 
                 if subs_nodata in i['message']:
                     print("No data available for the time window and spatial extent")
@@ -273,7 +282,7 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
     else:
         end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
 
-    if st_date > end_date:
+    if st_date >= end_date:
         print('Data for period from {st_date} to {end_date} are not available. Data will not be downloaded'.format(st_date=st_date,
                                                                                             end_date=end_date))
 
@@ -302,9 +311,7 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
     date_range = pd.date_range(start=st_date, end=end_date, freq=freq)
     slots = [(date_range[i].date().isoformat(), (date_range[i + 1] - timedelta(days=1)).date().isoformat()) for i in
              range(len(date_range) - 1)]
-    slots.append((date_range[-1].date().isoformat(), end_date.isoformat()))       # Add last day window
-
-    print(slots)
+    # slots.append((date_range[-1].date().isoformat(), end_date.isoformat()))       # Add last day window
 
     # Get Sentinel-2 data - run the job
     # Loop over the time windows
@@ -312,22 +319,34 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
         print(slots[i][0], slots[i][1])
 
         # Try to get Sentinel-2 data for the time window. There are 2 attempts
-        try:
-            jobid = process_s2_points_OEO(osm_id, point_layer, slots[i][0], slots[i][1], db_name, user, db_table_S2_points_data)
-            print(f"Attempt to get Sentinel 2 data succeeded. Job ID: {jobid}")
+        dataset_err = True
 
-        except Exception as e:
-            print(f"Attempt to get Sentinel 2 data failed. Error: {str(e)}")
-            jobid = None
+        # Attempt to get Sentinel-2 data
+        attempt_no = 1
+        while dataset_err:
+            try:
+                print(f"Attempt no. {attempt_no} to get Sentinel 2 data.")
+                jobid = process_s2_points_OEO(osm_id, point_layer, slots[i][0], slots[i][1], db_name, user, db_table_S2_points_data)
 
-        # Check if there is an error in the job
-        dataset_err = check_job_error(jobid)
+            except Exception as e:
+                print(f"Attempt no. {attempt_no} to get Sentinel 2 data failed. Error: {str(e)}")
+                jobid = None
+
+            # Check if there is an error in the job
+            dataset_err = check_job_error(jobid)
+
+            if dataset_err:
+                warnings.warn(f"Attempt no. {attempt_no} to get Sentinel 2 data failed.", stacklevel=2)
+                time.sleep(5)
+                if attempt_no == 3:
+                    break
+            attempt_no = attempt_no + 1
+
+        print(f"Dataset error: {dataset_err}")
 
         if dataset_err:
-            warnings.warn("Attempt failed. Error: {error}. The time window will be splitted to smaller "
-                          "windows", stacklevel=2)
-
             # Split time window to smaller windows
+            warnings.warn(f"Attempt to get Sentinel 2 data failed. The time window will be split to smaller windows", stacklevel=2)
             st_in_slot = datetime.strptime(slots[i][0], "%Y-%m-%d").date()
             end_in_slot = datetime.strptime(slots[i][1], "%Y-%m-%d").date()
             n_days_window = (end_in_slot - st_in_slot).days
