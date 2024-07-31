@@ -3,10 +3,17 @@ import geopandas as gpd
 from pathlib import Path
 import os
 
-from get_random_points import point_mesh
+from get_random_points import point_mesh, get_sampling_points
 from matplotlib import pyplot as plt
 
 class MyTestCase(unittest.TestCase):
+
+    osm_id = 8202190
+    db_name = "postgres"
+    user = "postgres"
+    db_table_reservoirs = "water_reservoirs"
+    db_table_points = "selected_points"
+
 
     def test_point_mesh(self):
 
@@ -27,6 +34,8 @@ class MyTestCase(unittest.TestCase):
 
         return
 
+    def test_get_sampling_points(self):
+        get_sampling_points(self.osm_id, self.db_name, self.user, self.db_table_reservoirs, self.db_table_points)
 
 if __name__ == '__main__':
     unittest.main()
