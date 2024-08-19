@@ -2,7 +2,6 @@ import json
 import os
 import time
 import openeo
-import tempfile
 import warnings
 import scipy.signal
 import uuid
@@ -13,7 +12,7 @@ import numpy as np
 import geopandas as gpd
 
 from datetime import datetime, timedelta
-from sqlalchemy import create_engine, exc, text
+from sqlalchemy import create_engine, text
 from shapely.geometry import Point
 
 from AIHABs_wrappers import measure_execution_time
@@ -50,7 +49,7 @@ def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, us
     :return: GeoDataFrame with Sentinel-2 data for the randomly selected points for the defined time period
     """
 
-    # Authenticate
+    # Authenticate Open EO account
     connection = authenticate_OEO()
 
     # Transform input GeoDataFrame layer into json
@@ -128,10 +127,11 @@ def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, us
             print("Waiting for data to be available...")
             t0 = time.time()
             while not os.path.exists(csv_path):
-                if time.time() - t0 > 60:
+                if time.time() - t0 > 360:                  # up to 6 minutes
                     print(f"Data are not available.")
                 time.sleep(1)
 
+            print("Data has been downloaded!")
             df = pd.read_csv(csv_path)
 
             # Remove the temporary file
@@ -141,13 +141,15 @@ def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, us
                 os.remove(csv_path)
 
         else:
+            print(f"Data are not available.")
             df = pd.DataFrame()
 
     except Exception as e:
         print(e)
-
+        print(f"Data are not available.")
         df = pd.DataFrame()
 
+    # Manage the output
     if not df.empty:
         # Convert to GeoDataFrame
         if df.get('date') is not None:
