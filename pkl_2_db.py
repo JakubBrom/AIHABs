@@ -5,6 +5,7 @@ import datetime
 from warnings import warn
 import dill
 import base64
+import uuid
 
 def add_model_to_table(table_name, db_name, user, feature, osm_id, orig_date, author, test_accuracy, pkl_file,
                        default=False):
@@ -38,7 +39,7 @@ def add_model_to_table(table_name, db_name, user, feature, osm_id, orig_date, au
         warn(f"The table does not exist in the database. The table {table_name} will be created.", stacklevel=2)
         # Create table
         # model_name, OSM_ID, feature, date, default, author, test_accuracy
-        sql_query = text("CREATE TABLE IF NOT EXISTS {db_table} (id serial PRIMARY KEY, osm_id text, date date, "
+        sql_query = text("CREATE TABLE IF NOT EXISTS {db_table} (id serial PRIMARY KEY, model_id text,osm_id text, date date, "
                          "feature varchar(50), model_name varchar(50), author varchar(50), test_accuracy double "
                          "precision, is_default boolean, pkl_file bytea)".format(db_table=table_name))
 
@@ -47,6 +48,7 @@ def add_model_to_table(table_name, db_name, user, feature, osm_id, orig_date, au
             connection.commit()
 
     # Add values to the table
+    model_id = str(uuid.uuid4())
     model_name = os.path.splitext(os.path.basename(pkl_file))[0]
     orig_date = datetime.datetime.strptime(orig_date, "%Y-%m-%d").date()
 
@@ -65,9 +67,9 @@ def add_model_to_table(table_name, db_name, user, feature, osm_id, orig_date, au
             connection.execute(def_query)
             connection.commit()
 
-    add_data_query = text("INSERT INTO {db_table} (osm_id, date, feature, model_name, author, test_accuracy, pkl_file, "
-                   "is_default) VALUES ('{osm_id}', '{date}', '{feature}', '{model_name}', '{author}', '{test_accuracy}', "
-                      "'{pkl_file}', {default})".format(db_table=table_name, osm_id=osm_id, date=orig_date, feature=feature,
+    add_data_query = text("INSERT INTO {db_table} (model_id, osm_id, date, feature, model_name, author, test_accuracy, pkl_file, "
+                   "is_default) VALUES ('{model_id}', '{osm_id}', '{date}', '{feature}', '{model_name}', '{author}', '{test_accuracy}', "
+                      "'{pkl_file}', {default})".format(db_table=table_name, model_id=model_id,osm_id=osm_id, date=orig_date, feature=feature,
                                              model_name=model_name, author=author, test_accuracy=test_accuracy,
                                              pkl_file=pkl_model, default=default))
 
@@ -83,8 +85,8 @@ def add_model_to_table(table_name, db_name, user, feature, osm_id, orig_date, au
 
 if __name__ == '__main__':
 
-    db_name = "AIHABs"
-    user = "jakub"
+    db_name = "postgres"
+    user = "postgres"
     tab_name = 'models_table'
 
     osm_id = None
@@ -93,6 +95,9 @@ if __name__ == '__main__':
     default = True
     author = 'Jakub'
     test_accuracy = 0.87
-    pkl_file = 'modely/AI_model_testx.pkl'
 
+    # Path to pkl file
+    pkl_file = os.path.join(os.path.dirname(__file__), 'pomocne', 'modely', 'AI_model_testx.pkl')
+
+    # Run the function
     add_model_to_table(tab_name, db_name, user, feature, osm_id, orig_date, author, test_accuracy, pkl_file, default)
