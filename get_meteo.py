@@ -262,5 +262,40 @@ def getLastDateInDB(osm_id, db_name, user, db_table):
     return last_date
 
 
+"""
+@software{Zippenfenig_Open-Meteo,
+  author = {Zippenfenig, Patrick},
+  doi = {10.5281/zenodo.7970649},
+  license = {CC-BY-4.0},
+  title = {Open-Meteo.com Weather API},
+  year = {2023},
+  copyright = {Creative Commons Attribution 4.0 International},
+  url = {https://open-meteo.com/}
+}
+@misc{Hersbach_ERA5,
+  doi = {10.24381/cds.adbb2d47},
+  url = {https://cds.climate.copernicus.eu/doi/10.24381/cds.adbb2d47},
+  author = {Hersbach, H., Bell, B., Berrisford, P., Biavati, G., Horányi, A., Muñoz Sabater, J., Nicolas, J., Peubey, C., Radu, R., Rozum, I., Schepers, D., Simmons, A., Soci, C., Dee, D., Thépaut, J-N.},
+  title = {ERA5 hourly data on single levels from 1940 to present},
+  publisher = {ECMWF},
+  year = {2023}
+}
+@misc{Munoz_ERA5_LAND,
+  doi = {10.24381/CDS.E2161BAC},
+  url = {https://cds.climate.copernicus.eu/doi/10.24381/cds.e2161bac},
+  author = {Muñoz Sabater, J.},
+  title = {ERA5-Land hourly data from 2001 to present},
+  publisher = {ECMWF},
+  year = {2019}
+}
+@misc{Schimanke_CERRA,
+  doi = {10.24381/CDS.622A565A},
+  url = {https://cds.climate.copernicus.eu/doi/10.24381/cds.622a565a},
+  author = {Schimanke S., Ridal M., Le Moigne P., Berggren L., Undén P., Randriamampianina R., Andrea U., Bazile E., Bertelsen A., Brousseau P., Dahlgren P., Edvinsson L., El Said A., Glinton M., Hopsch S., Isaksson L., Mladek R., Olsson E., Verrelle A., Wang Z.Q.},
+  title = {CERRA sub-daily regional reanalysis data for Europe on single levels from 1984 to present},
+  publisher = {ECMWF},
+  year = {2021}
+}
+"""
 
 
