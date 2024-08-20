@@ -28,7 +28,6 @@ def authenticate_OEO():
     return connection
 
 
-@measure_execution_time
 def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, user, db_table, max_cc=30, cloud_mask=True):
     """
     The function processes Sentinel-2 satellite data from the Copernicus Dataspace Ecosystem. The function
