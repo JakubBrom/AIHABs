@@ -12,7 +12,7 @@ from AIHABs_wrappers import measure_execution_time
 from warnings import warn
 
 
-def get_wq_db_last_date(osm_id, feature, db_name, user, db_table):
+def get_wq_db_last_date(osm_id, feature, db_name, user, db_table, model_id=None):
     """
     Get last date db table for particular OSM id and water quality feature
 
@@ -36,7 +36,7 @@ def get_wq_db_last_date(osm_id, feature, db_name, user, db_table):
 
     if not table_exists:
         sql_query = text("CREATE TABLE IF NOT EXISTS {db_table} (osm_id text, date date, feature_value double "
-                         "precision, feature varchar(50), model_id integer, {PID} integer)".format(
+                         "precision, feature varchar(50), model_id varchar(50), {PID} integer)".format(
             db_table=db_table, PID='"PID"'))
 
         srid = 4326
@@ -56,7 +56,7 @@ def get_wq_db_last_date(osm_id, feature, db_name, user, db_table):
         connection = engine.connect()
         # Define SQL query
         sql_query = text("SELECT MAX(date) FROM {db_table} WHERE osm_id = '{osm_id}' and feature = '{"
-                         "feature}'".format(osm_id=str(osm_id), feature=feature, db_table=db_table))
+                         "feature}' and model_id = '{model_id}'".format(osm_id=str(osm_id), feature=feature, db_table=db_table, model_id=model_id))
 
         # Running SQL query, conversion to DataFrame
         df = pd.read_sql(sql_query, connection)
@@ -82,12 +82,13 @@ def execute_query(connection, query):
     return result.scalar()
 
 
-def get_model_query(db_table, feature, osm_id=None, model_name=None, is_default=False):
+def get_model_query(db_table, feature, variable=None, osm_id=None, model_name=None, is_default=False):
     """
     The set of SQL queries for choosing the requested model for a WQ feature calculation.
 
     :param db_table: Name of the db table wth AI models
     :param feature: Water quality feature (e.g. ChlA, PC, TSS...)
+    :param variable: Variable name in the table for data selection
     :param osm_id: OSM object id
     :param model_name: Name of the model
     :param is_default: Is the model default
@@ -95,46 +96,18 @@ def get_model_query(db_table, feature, osm_id=None, model_name=None, is_default=
     """
 
     if is_default:
-        return text(f"SELECT pkl_file FROM {db_table} WHERE is_default = true AND feature = '{feature}' ORDER BY id "
+        return text(f"SELECT {variable} FROM {db_table} WHERE is_default = true AND feature = '{feature}' ORDER BY id "
                     f"DESC LIMIT 1")
     elif osm_id and model_name:
-        return text(f"SELECT pkl_file FROM {db_table} WHERE osm_id = '{osm_id}' AND model_name = '{model_name}' AND "
+        return text(f"SELECT {variable} FROM {db_table} WHERE osm_id = '{osm_id}' AND model_name = '{model_name}' AND "
                     f"feature = '{feature}' ORDER BY id DESC LIMIT 1")
     elif osm_id:
-        return text(f"SELECT pkl_file FROM {db_table} WHERE osm_id = '{osm_id}' AND feature = '{feature}' ORDER BY id DESC LIMIT 1")
+        return text(f"SELECT {variable} FROM {db_table} WHERE osm_id = '{osm_id}' AND feature = '{feature}' ORDER BY id DESC LIMIT 1")
     elif model_name:
-        return text(f"SELECT pkl_file FROM {db_table} WHERE model_name = '{model_name}' AND feature = '{feature}' "
+        return text(f"SELECT {variable} FROM {db_table} WHERE model_name = '{model_name}' AND feature = '{feature}' "
                     f"ORDER BY id DESC LIMIT 1")
     else:
-        return text(f"SELECT pkl_file FROM {db_table} WHERE feature = '{feature}' ORDER BY id DESC LIMIT 1")
-
-
-def get_model_id(db_table, feature, osm_id=None, model_name=None, is_default=False):
-    """
-    The set of SQL queries for choosing the requested model ID for a WQ feature calculation.
-
-    :param db_table: Name of the db table wth AI models
-    :param feature: Water quality feature (e.g. ChlA, PC, TSS...)
-    :param osm_id: OSM object id
-    :param model_name: Name of the model
-    :param is_default: Is the model default
-    :return:
-    """
-
-    if is_default:
-        return text(f"SELECT id FROM {db_table} WHERE is_default = true AND feature = '{feature}' ORDER BY id DESC "
-                    f"LIMIT 1")
-    elif osm_id and model_name:
-        return text(f"SELECT id FROM {db_table} WHERE osm_id = '{osm_id}' AND model_name = '{model_name}' AND feature "
-                    f"= '{feature}' ORDER BY id DESC LIMIT 1")
-    elif osm_id:
-        return text(f"SELECT id FROM {db_table} WHERE osm_id = '{osm_id}' AND feature = '{feature}' ORDER BY id DESC "
-                    f"LIMIT 1")
-    elif model_name:
-        return text(f"SELECT id FROM {db_table} WHERE model_name = '{model_name}' AND feature = '{feature}' ORDER BY "
-                    f"id DESC LIMIT 1")
-    else:
-        return text(f"SELECT id FROM {db_table} WHERE feature = '{feature}' ORDER BY id DESC LIMIT 1")
+        return text(f"SELECT {variable} FROM {db_table} WHERE feature = '{feature}' ORDER BY id DESC LIMIT 1")
 
 
 def select_model(db_name, user, db_models, feature='ChlA', osm_id=None, model_name=None, default=True):
@@ -169,32 +142,42 @@ def select_model(db_name, user, db_models, feature='ChlA', osm_id=None, model_na
     if default:
         test_default_query = text(f"SELECT 1 FROM {db_models} WHERE is_default = true AND feature = '{feature}' LIMIT 1")
         if execute_query(connection, test_default_query):
-            model_query = get_model_query(db_models, feature, is_default=True)
-            model_id = get_model_id(db_models, feature, is_default=True)
+            model_query = get_model_query(db_models, feature, variable='pkl_file', is_default=True)
+            model_id = get_model_query(db_models, feature, variable='model_id', is_default=True)
 
     if model_query is None and osm_id and model_name:
         test_osmid_name_query = text(f"SELECT 1 FROM {db_models} WHERE osm_id = '{osm_id}' AND model_name = '{model_name}' AND feature = '{feature}' LIMIT 1")
         if execute_query(connection, test_osmid_name_query):
-            model_query = get_model_query(db_models, feature, osm_id=osm_id, model_name=model_name)
-            model_id = get_model_id(db_models, feature, osm_id=osm_id, model_name=model_name)
+            model_query = get_model_query(db_models, feature, variable='pkl_file', osm_id=osm_id, model_name=model_name)
+            model_id = get_model_query(db_models, feature, variable='model_id', osm_id=osm_id, model_name=model_name)
 
     if model_query is None and model_name:
         test_model_name_query = text(f"SELECT 1 FROM {db_models} WHERE model_name = '{model_name}' AND feature = '{feature}' LIMIT 1")
         if execute_query(connection, test_model_name_query):
-            model_query = get_model_query(db_models, feature, model_name=model_name)
-            model_id = get_model_id(db_models, feature, model_name=model_name)
+            model_query = get_model_query(db_models, feature, variable='pkl_file', model_name=model_name)
+            model_id = get_model_query(db_models, feature, variable='model_id', model_name=model_name)
 
     if model_query is None and osm_id:
         test_osmid_query = text(f"SELECT 1 FROM {db_models} WHERE osm_id = '{osm_id}' AND feature = '{feature}' LIMIT 1")
         if execute_query(connection, test_osmid_query):
-            model_query = get_model_query(db_models, feature, osm_id=osm_id)
-            model_id = get_model_id(db_models, feature, osm_id=osm_id)
+            model_query = get_model_query(db_models, feature, variable='pkl_file', osm_id=osm_id)
+            model_id = get_model_query(db_models, feature, variable='model_id', osm_id=osm_id)
 
     if model_query is None:
-        warn(f"The requested model does not exist in the database. The last available model will be used.",
-             stacklevel=2)
-        model_query = get_model_query(db_models, feature)
-        model_id = get_model_id(db_models, feature)
+        # In that case select default model
+        test_default_query = text(
+            f"SELECT 1 FROM {db_models} WHERE is_default = true AND feature = '{feature}' LIMIT 1")
+        if execute_query(connection, test_default_query):
+            warn(f"The requested model does not exist in the database. The default model will be used.",
+                 stacklevel=2)
+            model_query = get_model_query(db_models, feature, variable='pkl_file', is_default=True)
+            model_id = get_model_query(db_models, feature, variable='model_id', is_default=True)
+        else:
+            # Select the last model if default does not exist
+            warn(f"The requested model does not exist in the database. The last available model will be used.",
+                 stacklevel=2)
+            model_query = get_model_query(db_models, feature, variable='pkl_file')
+            model_id = get_model_query(db_models, feature, variable='model_id')
 
     # Get prediction model from DB and model ID
     result = execute_query(connection, model_query)
@@ -231,9 +214,15 @@ def calculate_feature(feature, osm_id, db_name, user, db_bands_table, db_feature
     engine = create_engine('postgresql://{}@/{}'.format(user, db_name))
     connection = engine.connect()
 
-    # Getting starting and ending dates for WQ feature calculations
+    ## Get Pickle model and its ID from the database
+    prediction_model, model_id = select_model(db_name, user, db_models, feature, osm_id, model_name, default_model)
+
+    print("Model ID: ", model_id)
+    print("Model: ", prediction_model)
+
+    # Getting starting and ending dates for WQ feature calculations:
     try:
-        start_date = get_wq_db_last_date(osm_id, feature, db_name, user, db_features_table)
+        start_date = get_wq_db_last_date(osm_id, feature, db_name, user, db_features_table, model_id)
 
         if start_date is None:
             warn("The date does not exist in the database. The default value will be set.", stacklevel=2)
@@ -276,13 +265,11 @@ def calculate_feature(feature, osm_id, db_name, user, db_bands_table, db_feature
 
         input_data = [B01, B02, B03, B04, B05, B06, B07, B08, B8A, B09, B11, B12]
 
-        ## Get Pickle model from the database
-        prediction_model, model_id = select_model(db_name, user, db_models, feature, osm_id, model_name, default_model)
-
+        ## Run the prediction model
         if prediction_model is None:
             return None
 
-        ## vypočítat WQ feature
+        ## Calculate WQ feature values
         wq_values = prediction_model.predict(input_data)
 
         ## Save the results to the database
