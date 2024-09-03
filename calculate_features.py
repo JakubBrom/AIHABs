@@ -207,7 +207,7 @@ def calculate_feature(feature, osm_id, db_name, user, db_bands_table, db_feature
     :param model_name: Name of the model
     :param default_model: Is the model default
     :param kwargs: Additional parameters
-    :return:
+    :return: Output water quality dataset; Model ID
     """
 
     # Connect to PostGIS
@@ -249,7 +249,7 @@ def calculate_feature(feature, osm_id, db_name, user, db_bands_table, db_feature
         return None
 
     else:
-        ## Define input parameters for the model
+        # Define input parameters for the model
         B01 = np.nan_to_num(gdf_data['B01'].values * 0.0001, nan=1.0)
         B02 = np.nan_to_num(gdf_data['B02'].values * 0.0001, nan=1.0)
         B03 = np.nan_to_num(gdf_data['B03'].values * 0.0001, nan=1.0)
@@ -265,14 +265,14 @@ def calculate_feature(feature, osm_id, db_name, user, db_bands_table, db_feature
 
         input_data = [B01, B02, B03, B04, B05, B06, B07, B08, B8A, B09, B11, B12]
 
-        ## Run the prediction model
+        # Run the prediction model
         if prediction_model is None:
             return None
 
-        ## Calculate WQ feature values
+        # Calculate WQ feature values
         wq_values = prediction_model.predict(input_data)
 
-        ## Save the results to the database
+        # Save the results to the database
         selected_columns = ['osm_id', 'date', 'PID', 'geometry']
         gdf_out = gdf_data[selected_columns].copy()
         gdf_out['feature_value'] = wq_values
@@ -288,4 +288,4 @@ def calculate_feature(feature, osm_id, db_name, user, db_bands_table, db_feature
         connection.close()
         engine.dispose()
 
-        return gdf_out
+        return gdf_out, model_id
