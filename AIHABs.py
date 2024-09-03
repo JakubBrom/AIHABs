@@ -2,10 +2,33 @@
 from get_S2_points_OpenEO import authenticate_OEO, get_s2_points_OEO
 from calculate_features import calculate_feature
 from get_meteo import getHistoricalMeteoData, getPredictedMeteoData
+from data_imputation import data_imputation
 
 class AIHABs:
 
     def __init__(self):
+        """
+        Initializes the AIHABs class with default values for various attributes.
+
+        This method authenticates the OpenEO program after starting the program by calling the authenticate_OEO function. It sets the following attributes with default values:
+        - db_name: the name of the database (default: "postgres")
+        - user: the username for the database (default: "postgres")
+        - db_table_reservoirs: the name of the table for water reservoirs (default: "water_reservoirs")
+        - db_table_points: the name of the table for selected points (default: "selected_points")
+        - db_table_S2_points_data: the name of the table for S2 points data (default: "s2_points_eo_data")
+        - db_features_table: the name of the table for water quality point results (default: "wq_points_results")
+        - db_models: the name of the table for models (default: "models_table")
+        - db_table_forecast: the name of the table for meteo forecast (default: "meteo_forecast")
+        - db_table_history: the name of the table for meteo history (default: "meteo_history")
+        - model_name: the name of the model (default: None)
+        - default_model: a flag indicating if it's a default model (default: False)
+        - osm_id: the OpenStreetMap ID
+        - feature: the feature to be analyzed (default: "ChlA")
+        - meteo_features: a list of meteo features to be used for analysis (default: ["weather_code", "temperature_2m_max", "temperature_2m_min", "daylight_duration", "sunshine_duration", "precipitation_sum", "wind_speed_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum"])
+        - freq: the frequency of the analysis: W - weekly, D - daily, M - monthly (default: "W")
+        - t_shift: the time shift (default: 1)
+        - forecast_days: the number of forecast days (weeks or months) (default: 16)
+        """
 
         # Authenticate after starting the program
         authenticate_OEO()          # The OpenEO needs to be authenticated first
@@ -28,6 +51,9 @@ class AIHABs:
         self.meteo_features = ["weather_code", "temperature_2m_max", "temperature_2m_min", "daylight_duration",
                       "sunshine_duration", "precipitation_sum", "wind_speed_10m_max", "wind_direction_10m_dominant",
                       "shortwave_radiation_sum"]
+
+        self.freq = 'W'
+        self.t_shift = 1
         self.forecast_days = 16
 
 
@@ -37,7 +63,7 @@ class AIHABs:
         get_s2_points_OEO(self.osm_id, self.db_name, self.user, self.db_table_reservoirs, self.db_table_points, self.db_table_S2_points_data)
 
         # calculate WQ features --> new AI models
-        calculate_feature(self.feature, self.osm_id, self.db_name, self.user, self.db_table_S2_points_data, self.db_features_table, self.db_models)
+        model_id = calculate_feature(self.feature, self.osm_id, self.db_name, self.user, self.db_table_S2_points_data, self.db_features_table, self.db_models, model_name=self.model_name, default=self.default_model)[1]
 
         # get meteodata
         # get historical meteodata
@@ -45,12 +71,10 @@ class AIHABs:
         # get predicted meteodata
         getPredictedMeteoData(self.osm_id, self.meteo_features, self.user, self.db_name, self.db_table_forecast, self.db_table_reservoirs, self.forecast_days)
 
-        # parse data together
-        # parse Sentinel and meteodata
-
-
-        # inputation of missing values (based on AI)
+        # imputation of missing values (based on SVR model)
+        gdf_imputed, gdf_smooth = data_imputation(self.db_name, self.user, self.osm_id, self.feature, model_id, self.db_features_table, self.db_table_history, freq=self.freq, t_shift=self.t_shift)
 
         # run AI time series analysis
-        pass
+
+        return gdf_imputed, gdf_smooth
 
