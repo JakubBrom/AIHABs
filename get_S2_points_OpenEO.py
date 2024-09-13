@@ -113,13 +113,14 @@ def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, us
         engine.dispose()
         return jobid
 
-    # job = aggregated.execute_batch(title=f"{osm_id}_{start_date}_{end_date}", out_format="CSV")
-
     # Download the results
     try:
         if job.status() == 'finished':
+            # Create temporary CSV file
             csv_file = f"{uuid.uuid4()}.csv"
             csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp', csv_file)
+
+            # Download the results
             job.get_results().download_file(csv_path)
 
             # Check if the file is available
@@ -130,58 +131,59 @@ def process_s2_points_OEO(osm_id, point_layer, start_date, end_date, db_name, us
                     print(f"Data are not available.")
                 time.sleep(1)
 
-            print("Data has been downloaded!")
             df = pd.read_csv(csv_path)
+            print("Data has been downloaded!")
+
+            print("Writing data to the PostGIS table")
+            # Convert to GeoDataFrame
+            if df.get('date') is not None:
+                # Convert date do isoformat
+                df['date'] = pd.to_datetime(df['date']).dt.date
+
+                # Remove missing values
+                df_all = df.dropna(axis=0, how='any')
+
+                # Rename columns
+                df_all = df_all.rename(columns={'feature_index': 'PID'})
+                for i in range(0, len(band_list)):
+                    df_all = df_all.rename(columns={'avg(band_{})'.format(i): band_list[i]})
+
+                # Add OSM id
+                df_all['osm_id'] = point_layer['osm_id'][0]
+
+                # Convert to GeoDataFrame
+                latlon = pd.DataFrame(point_layer['PID'])
+                latlon['lat'] = point_layer.geometry.y
+                latlon['lon'] = point_layer.geometry.x
+                df_all = df_all.merge(latlon, on='PID', how='left')
+
+                geometries = [Point(xy) for xy in zip(df_all['lon'], df_all['lat'])]
+                gdf_out = gpd.GeoDataFrame(df_all, geometry=geometries, crs='epsg:4326')
+
+                # Save the results to the database
+                gdf_out.to_postgis(db_table, con=engine, if_exists='append', index=False)
+                engine.dispose()
+
+                print("Done!")
 
             # Remove the temporary file
             print(f"Removing temporary file {csv_file}")
             if os.path.exists(csv_path):
-
                 os.remove(csv_path)
+
+            print(f"Data for OSM_ID: {osm_id} in the time window {start_date} and {end_date} has been downloaded!")
+            return jobid
 
         else:
             print(f"Data are not available.")
-            df = pd.DataFrame()
+            engine.dispose()
+            return jobid
 
     except Exception as e:
         print(e)
         print(f"Data are not available.")
-        df = pd.DataFrame()
-
-    # Manage the output
-    if not df.empty:
-        # Convert to GeoDataFrame
-        if df.get('date') is not None:
-            # Convert date do isoformat
-            df['date'] = pd.to_datetime(df['date']).dt.date
-
-            # Remove missing values
-            df_all = df.dropna(axis=0, how='any')
-
-            # Rename columns
-            df_all = df_all.rename(columns={'feature_index': 'PID'})
-            for i in range(0, len(band_list)):
-                df_all = df_all.rename(columns={'avg(band_{})'.format(i): band_list[i]})
-
-            # Add OSM id
-            df_all['osm_id'] = point_layer['osm_id'][0]
-
-            # Convert to GeoDataFrame
-            latlon = pd.DataFrame(point_layer['PID'])
-            latlon['lat'] = point_layer.geometry.y
-            latlon['lon'] = point_layer.geometry.x
-            df_all = df_all.merge(latlon, on='PID', how='left')
-
-            geometries = [Point(xy) for xy in zip(df_all['lon'], df_all['lat'])]
-            gdf_out = gpd.GeoDataFrame(df_all, geometry=geometries, crs='epsg:4326')
-
-            # Save the results to the database
-            gdf_out.to_postgis(db_table, con=engine, if_exists='append', index=False)
-            engine.dispose()
-
-    engine.dispose()
-
-    return jobid
+        engine.dispose()
+        return jobid
 
 
 def check_job_error(jobid=None):
@@ -240,6 +242,7 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
     :param db_table_reservoirs: Database table with water reservoirs
     :param db_table_points: Database table with points for reservoirs
     :param db_table_S2_points_data: Database table with Sentinel-2 data where the data are stored
+    :param db_table_meteo: Database table with historic meteo data
     :param start_date: Start date
     :param end_date: End date
     :param n_points_max: Maximum number of points for water reservoir
@@ -266,6 +269,7 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
     if exists:
         # Get last date from database
         st_date = getLastDateInDB(osm_id, db_name, user, db_table_S2_points_data)
+
     else:
         st_date = None
 
@@ -317,7 +321,7 @@ def get_s2_points_OEO(osm_id, db_name, user, db_table_reservoirs, db_table_point
     # Get Sentinel-2 data - run the job
     # Loop over the time windows
     for i in range(len(slots)):
-        print(slots[i][0], slots[i][1])
+        print(f"Data for time slot from {slots[i][0]} to {slots[i][1]} will be downloaded")
 
         # Try to get Sentinel-2 data for the time window. There are 2 attempts
         dataset_err = True
